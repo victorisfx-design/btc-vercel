@@ -1,0 +1,848 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BTC Options Algo — Delta Exchange</title>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;500;600;700&family=Barlow+Condensed:wght@300;400;600;700;900&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:      #06080f;
+    --panel:   #0b0f1c;
+    --panel2:  #0e1422;
+    --border:  #162035;
+    --brd2:    #1e2d48;
+    --blue:    #38bdf8;
+    --blue2:   #0ea5e9;
+    --green:   #4ade80;
+    --red:     #f87171;
+    --yellow:  #fbbf24;
+    --purple:  #a78bfa;
+    --text:    #e2e8f0;
+    --muted:   #4a6080;
+    --muted2:  #2a3f60;
+    --mono:    'Share Tech Mono', monospace;
+    --head:    'Barlow Condensed', sans-serif;
+    --body:    'Rajdhani', sans-serif;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { height: 100%; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--body);
+    min-height: 100vh;
+    overflow-x: hidden;
+    background-image: radial-gradient(ellipse 80% 50% at 50% -10%, rgba(56,189,248,0.07) 0%, transparent 60%);
+  }
+
+  ::-webkit-scrollbar { width: 3px; height: 3px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--brd2); border-radius: 2px; }
+
+  /* HEADER */
+  header {
+    background: rgba(6,8,15,0.95);
+    border-bottom: 1px solid var(--brd2);
+    padding: 0 28px;
+    height: 60px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    backdrop-filter: blur(20px);
+  }
+
+  .logo { display: flex; align-items: center; gap: 14px; }
+  .logo-icon {
+    width: 36px; height: 36px;
+    background: linear-gradient(135deg, var(--blue2), var(--purple));
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px; color: #fff; font-weight: 900;
+  }
+  .logo-name {
+    font-family: var(--head);
+    font-size: 20px; font-weight: 900; letter-spacing: 3px;
+    background: linear-gradient(90deg, var(--text), var(--blue));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .logo-sub { font-size: 10px; color: var(--muted); letter-spacing: 2.5px; margin-top: 1px; }
+
+  .hdr-right { display: flex; align-items: center; gap: 20px; }
+
+  .acct-badge {
+    display: none;
+    align-items: center; gap: 8px;
+    background: rgba(56,189,248,0.07);
+    border: 1px solid rgba(56,189,248,0.15);
+    border-radius: 8px; padding: 5px 12px;
+  }
+  .acct-avatar {
+    width: 26px; height: 26px; border-radius: 50%;
+    background: linear-gradient(135deg, var(--blue2), var(--purple));
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 700; color: #fff;
+  }
+  .acct-name  { font-size: 12px; font-weight: 600; color: var(--text); }
+  .acct-email { font-size: 10px; color: var(--muted); }
+
+  /* SSE connection pill (replaces WS pill) */
+  .ws-pill {
+    display: flex; align-items: center; gap: 6px;
+    font-family: var(--mono); font-size: 10px; color: var(--muted);
+    background: rgba(255,255,255,0.03);
+    border: 1px solid var(--border); border-radius: 20px;
+    padding: 4px 10px;
+  }
+  .ws-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); transition: all 0.3s; }
+  .ws-dot.on { background: var(--green); box-shadow: 0 0 8px var(--green); }
+
+  .status-pill {
+    display: flex; align-items: center; gap: 8px;
+    border-radius: 20px; padding: 4px 12px;
+    border: 1px solid var(--border);
+    background: rgba(255,255,255,0.03);
+    font-family: var(--mono); font-size: 11px;
+  }
+  .sdot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); transition: all 0.3s; }
+  .sdot.monitoring { background: var(--blue); box-shadow: 0 0 10px var(--blue); animation: pulse 1.5s infinite; }
+  .sdot.confirming { background: var(--yellow); box-shadow: 0 0 10px var(--yellow); animation: pulse 0.8s infinite; }
+  .sdot.trading    { background: var(--green);  box-shadow: 0 0 12px var(--green);  animation: pulse 0.5s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+  /* LAYOUT */
+  .app {
+    display: grid;
+    grid-template-columns: 300px 1fr;
+    height: calc(100vh - 60px);
+  }
+
+  /* SIDEBAR */
+  .sidebar {
+    background: var(--panel);
+    border-right: 1px solid var(--border);
+    overflow-y: auto;
+    display: flex; flex-direction: column;
+  }
+
+  .sec { padding: 16px; border-bottom: 1px solid var(--border); }
+  .sec-title {
+    font-family: var(--head); font-size: 11px; font-weight: 700;
+    letter-spacing: 3px; text-transform: uppercase;
+    color: var(--muted); margin-bottom: 12px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .sec-title::after {
+    content: ''; flex: 1; height: 1px;
+    background: linear-gradient(90deg, var(--border), transparent);
+  }
+
+  .ig { margin-bottom: 10px; }
+  .ig:last-child { margin-bottom: 0; }
+  .ilbl { font-size: 11px; color: var(--muted); margin-bottom: 5px; display: block; letter-spacing: 0.5px; }
+  .irow { display: flex; gap: 8px; }
+
+  input, select {
+    width: 100%;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid var(--brd2);
+    color: var(--text);
+    padding: 9px 12px;
+    border-radius: 7px;
+    font-family: var(--mono); font-size: 12px;
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+  input:focus, select:focus {
+    border-color: var(--blue2);
+    box-shadow: 0 0 0 3px rgba(14,165,233,0.1);
+  }
+  select { cursor: pointer; }
+  select option { background: #0b0f1c; }
+  .irow input { flex: 1; }
+  .irow select { width: 76px; flex-shrink: 0; }
+
+  .scard {
+    background: rgba(255,255,255,0.02);
+    border: 1px solid var(--brd2);
+    border-radius: 10px; padding: 12px;
+    margin-bottom: 10px;
+  }
+  .scard:last-child { margin-bottom: 0; }
+  .scard-hdr { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+  .scard-title {
+    font-family: var(--head); font-size: 11px;
+    letter-spacing: 2.5px; text-transform: uppercase;
+    font-weight: 700; color: var(--blue);
+  }
+  .scard-title.s2 { color: var(--yellow); }
+  .scard-num {
+    font-family: var(--mono); font-size: 10px;
+    color: var(--muted); background: var(--border);
+    padding: 2px 7px; border-radius: 4px;
+  }
+
+  .rules-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
+  .rbox {
+    background: rgba(255,255,255,0.02);
+    border: 1px solid var(--border);
+    border-radius: 8px; padding: 10px; text-align: center;
+  }
+  .rv { font-family: var(--mono); font-size: 20px; }
+  .rl { font-size: 9px; color: var(--muted); letter-spacing: 1.5px; text-transform: uppercase; margin-top: 2px; }
+  .g { color: var(--green); } .r { color: var(--red); }
+  .b { color: var(--blue);  } .y { color: var(--yellow); }
+
+  .btn {
+    width: 100%; padding: 12px;
+    border-radius: 8px; border: none;
+    font-family: var(--head); font-size: 15px; font-weight: 700;
+    letter-spacing: 2px; cursor: pointer;
+    transition: all 0.2s; margin-bottom: 8px;
+    text-transform: uppercase;
+  }
+  .btn:last-child { margin-bottom: 0; }
+  .btn-go {
+    background: linear-gradient(135deg, #166534, #16a34a, #22c55e);
+    color: #fff; box-shadow: 0 4px 15px rgba(34,197,94,0.15);
+  }
+  .btn-go:hover:not(:disabled) { filter: brightness(1.15); transform: translateY(-1px); }
+  .btn-go:disabled  { background: #0f2218; color: var(--muted2); cursor: not-allowed; transform: none; box-shadow: none; }
+  .btn-stop {
+    background: linear-gradient(135deg, #7f1d1d, #b91c1c, #ef4444);
+    color: #fff; box-shadow: 0 4px 15px rgba(239,68,68,0.15);
+  }
+  .btn-stop:hover:not(:disabled) { filter: brightness(1.15); transform: translateY(-1px); }
+  .btn-stop:disabled { background: #1c0f0f; color: var(--muted2); cursor: not-allowed; transform: none; box-shadow: none; }
+
+  .bal-box {
+    background: linear-gradient(135deg, rgba(14,165,233,0.07), rgba(167,139,250,0.07));
+    border: 1px solid rgba(56,189,248,0.2);
+    border-radius: 10px; padding: 14px; text-align: center;
+  }
+  .bal-lbl  { font-size: 9px; letter-spacing: 3px; color: var(--muted); text-transform: uppercase; }
+  .bal-val  { font-family: var(--mono); font-size: 24px; color: var(--green); margin: 6px 0; }
+  .bal-note { font-size: 10px; color: var(--muted); margin-bottom: 8px; }
+  .bal-edit { display: flex; gap: 6px; margin-top: 8px; }
+  .bsm {
+    padding: 7px 14px; border-radius: 6px; border: none;
+    background: var(--blue2); color: #fff;
+    font-size: 11px; font-weight: 700; cursor: pointer;
+    white-space: nowrap; font-family: var(--body);
+    transition: filter 0.2s;
+  }
+  .bsm:hover { filter: brightness(1.15); }
+  .bsm.dim  { background: var(--brd2); }
+
+  .sgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .sbox {
+    background: rgba(255,255,255,0.02);
+    border: 1px solid var(--border);
+    border-radius: 8px; padding: 10px; text-align: center;
+  }
+  .sv { font-family: var(--mono); font-size: 19px; }
+  .sl { font-size: 9px; color: var(--muted); letter-spacing: 1.5px; text-transform: uppercase; margin-top: 3px; }
+
+  .tp-note {
+    font-size: 10px; color: var(--muted);
+    background: rgba(74,222,128,0.05);
+    border: 1px solid rgba(74,222,128,0.12);
+    border-radius: 6px; padding: 8px 10px;
+    margin-top: 8px; line-height: 1.8;
+  }
+
+  /* MAIN */
+  .main { overflow-y: auto; display: flex; flex-direction: column; }
+
+  .pm {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 1px; background: var(--border);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .pc {
+    background: var(--panel); padding: 20px 22px;
+    position: relative; overflow: hidden;
+  }
+  .pc::before {
+    content: ''; position: absolute;
+    top: 0; left: 0; right: 0; height: 2px;
+    background: linear-gradient(90deg, var(--blue2), var(--purple));
+  }
+  .pc.s2::before { background: linear-gradient(90deg, var(--yellow), var(--red)); }
+  .pch { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; }
+  .pclbl    { font-size: 10px; color: var(--muted); letter-spacing: 2px; text-transform: uppercase; }
+  .pcstrike { font-family: var(--head); font-size: 18px; font-weight: 700; margin-top: 3px; letter-spacing: 1px; }
+  .pbadge   {
+    font-family: var(--mono); font-size: 10px; font-weight: 700;
+    letter-spacing: 1.5px; padding: 3px 9px; border-radius: 5px; text-transform: uppercase;
+  }
+  .pce { background: rgba(14,165,233,0.12); color: var(--blue); border: 1px solid rgba(14,165,233,0.3); }
+  .ppe { background: rgba(251,191,36,0.12); color: var(--yellow); border: 1px solid rgba(251,191,36,0.3); }
+  .plive { font-family: var(--mono); font-size: 38px; line-height: 1; letter-spacing: -1px; transition: color 0.3s; }
+  .plive.up { color: var(--green); }
+  .plive.dn { color: var(--red); }
+  .pmeta    { display: flex; gap: 20px; margin-top: 10px; }
+  .pm-item  { font-size: 11px; }
+  .pm-lbl   { color: var(--muted); }
+  .pm-val   { font-family: var(--mono); color: var(--text); margin-left: 4px; }
+
+  .cbar {
+    background: rgba(251,191,36,0.06);
+    border-bottom: 1px solid rgba(251,191,36,0.2);
+    padding: 10px 22px; display: none;
+    align-items: center; gap: 14px; flex-shrink: 0;
+  }
+  .cbar.show { display: flex; }
+  .clbl { font-family: var(--head); font-size: 13px; font-weight: 700; color: var(--yellow); letter-spacing: 1.5px; white-space: nowrap; }
+  .cpw  { flex: 1; background: rgba(251,191,36,0.1); border-radius: 3px; height: 5px; overflow: hidden; }
+  .cp   { height: 100%; background: linear-gradient(90deg, var(--yellow), #f97316); border-radius: 3px; transition: width 2s linear; }
+  .ct   { font-family: var(--mono); font-size: 15px; color: var(--yellow); min-width: 52px; text-align: right; }
+
+  .pp {
+    background: rgba(74,222,128,0.04);
+    border-bottom: 1px solid rgba(74,222,128,0.15);
+    padding: 16px 22px; display: none; flex-shrink: 0;
+  }
+  .pp.show { display: block; }
+  .pph  { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+  .ppt  { font-family: var(--head); font-size: 11px; letter-spacing: 3px; text-transform: uppercase; color: var(--green); font-weight: 700; }
+  .ppnl { font-family: var(--mono); font-size: 24px; }
+  .ppg  { display: grid; grid-template-columns: repeat(4,1fr); gap: 12px; margin-bottom: 10px; }
+  .ppi-lbl { font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: 1.5px; }
+  .ppi-val { font-family: var(--mono); font-size: 14px; margin-top: 3px; }
+  .ptr {
+    background: rgba(255,255,255,0.04); border-radius: 4px; height: 6px;
+    position: relative; overflow: visible; margin-top: 14px;
+  }
+  .ptr-sl  { position: absolute; left: 0; top: 0; height: 100%; background: var(--red); border-radius: 4px 0 0 4px; opacity: 0.4; width: 20%; }
+  .ptr-tp  { position: absolute; right: 0; top: 0; height: 100%; background: var(--green); border-radius: 0 4px 4px 0; opacity: 0.4; width: 20%; }
+  .ptr-cur {
+    position: absolute; top: -4px; width: 14px; height: 14px;
+    background: var(--text); border-radius: 50%;
+    transform: translateX(-50%); border: 2px solid var(--bg);
+    transition: left 0.5s ease; left: 50%;
+  }
+
+  .bsplit {
+    display: grid; grid-template-columns: 1fr 340px;
+    flex: 1; min-height: 300px;
+    background: var(--border); gap: 1px;
+  }
+  .hpanel, .lpanel {
+    background: var(--panel); overflow: hidden;
+    display: flex; flex-direction: column;
+  }
+  .phdr {
+    padding: 10px 16px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+    flex-shrink: 0;
+  }
+  .ptitle { font-family: var(--head); font-size: 11px; font-weight: 700; letter-spacing: 2.5px; text-transform: uppercase; color: var(--muted); }
+  .tw     { overflow-y: auto; flex: 1; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 11px; }
+  thead th {
+    background: rgba(0,0,0,0.3); padding: 8px 12px;
+    text-align: left; font-size: 9px; font-weight: 700;
+    letter-spacing: 2px; text-transform: uppercase; color: var(--muted);
+    position: sticky; top: 0; z-index: 1;
+    border-bottom: 1px solid var(--border);
+  }
+  tbody tr { border-bottom: 1px solid rgba(22,32,53,0.6); transition: background 0.15s; }
+  tbody tr:hover { background: rgba(255,255,255,0.02); }
+  tbody td { padding: 7px 12px; font-family: var(--mono); font-size: 11px; vertical-align: middle; }
+  .rbp { font-size: 9px; font-weight: 700; padding: 2px 8px; border-radius: 4px; letter-spacing: 1.5px; }
+  .rp  { background: rgba(74,222,128,0.12); color: var(--green); border: 1px solid rgba(74,222,128,0.25); }
+  .rl2  { background: rgba(248,113,113,0.12); color: var(--red);   border: 1px solid rgba(248,113,113,0.25); }
+  .pp2 { color: var(--green); } .pn { color: var(--red); }
+  .empty { text-align: center; padding: 40px; color: var(--muted); font-family: var(--body); font-size: 13px; }
+
+  .llist  { overflow-y: auto; flex: 1; padding: 6px; }
+  .lentry { display: flex; gap: 8px; padding: 5px 8px; border-radius: 5px; margin-bottom: 2px; transition: background 0.15s; }
+  .lentry:hover { background: rgba(255,255,255,0.025); }
+  .ltime { font-family: var(--mono); color: var(--muted); font-size: 10px; white-space: nowrap; flex-shrink: 0; padding-top: 1px; }
+  .lmsg  { color: var(--text); font-family: var(--mono); font-size: 11px; word-break: break-word; line-height: 1.5; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-icon">₿</div>
+    <div>
+      <div class="logo-name">BTC OPTIONS ALGO</div>
+      <div class="logo-sub">Delta Exchange · Breakout Strategy</div>
+    </div>
+  </div>
+  <div class="hdr-right">
+    <div class="acct-badge" id="acctBadge">
+      <div class="acct-avatar" id="acctAvatar">?</div>
+      <div>
+        <div class="acct-name"  id="acctName">Detecting...</div>
+        <div class="acct-email" id="acctEmail">Delta Exchange</div>
+      </div>
+    </div>
+    <div class="ws-pill">
+      <div class="ws-dot" id="wsDot"></div>
+      <span id="wsLbl">OFFLINE</span>
+    </div>
+    <div class="status-pill">
+      <div class="sdot" id="sdot"></div>
+      <span id="slbl" style="color:var(--muted)">IDLE</span>
+    </div>
+  </div>
+</header>
+
+<div class="app">
+
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+
+    <div class="sec">
+      <div class="sec-title">Account Balance</div>
+      <div class="bal-box">
+        <div class="bal-lbl">Capital</div>
+        <div class="bal-val" id="balVal">₹1,00,000</div>
+        <div class="bal-note" id="balNote">Syncing with Delta Exchange...</div>
+        <div class="bal-edit">
+          <input type="number" id="balInput" placeholder="Override balance..." />
+          <button class="bsm" onclick="setBalance()">Set</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="sec">
+      <div class="sec-title">Strike Configuration</div>
+      <div class="scard">
+        <div class="scard-hdr">
+          <div class="scard-title">◈ Strike 1</div>
+          <div class="scard-num">CE / PE</div>
+        </div>
+        <div class="ig">
+          <label class="ilbl">Strike Price &amp; Type</label>
+          <div class="irow">
+            <input type="number" id="s1" placeholder="e.g. 76600" />
+            <select id="t1"><option value="CE">CE</option><option value="PE">PE</option></select>
+          </div>
+        </div>
+        <div class="ig">
+          <label class="ilbl">Key Level (Watch Price)</label>
+          <input type="number" id="l1" placeholder="e.g. 575" />
+        </div>
+      </div>
+      <div class="scard">
+        <div class="scard-hdr">
+          <div class="scard-title s2">◈ Strike 2</div>
+          <div class="scard-num">CE / PE</div>
+        </div>
+        <div class="ig">
+          <label class="ilbl">Strike Price &amp; Type</label>
+          <div class="irow">
+            <input type="number" id="s2" placeholder="e.g. 77800" />
+            <select id="t2"><option value="PE">PE</option><option value="CE">CE</option></select>
+          </div>
+        </div>
+        <div class="ig">
+          <label class="ilbl">Key Level (Watch Price)</label>
+          <input type="number" id="l2" placeholder="e.g. 547" />
+        </div>
+      </div>
+    </div>
+
+    <div class="sec">
+      <div class="sec-title">Trade Parameters</div>
+      <div class="ig">
+        <label class="ilbl">Take Profit — Premium Price Value</label>
+        <input type="number" id="tp_price" placeholder="e.g. 850" step="0.5" />
+      </div>
+      <div class="rules-grid">
+        <div class="rbox"><div class="rv r">50%</div><div class="rl">Auto Stop Loss</div></div>
+        <div class="rbox"><div class="rv y">10 min</div><div class="rl">Confirmation</div></div>
+      </div>
+      <div class="tp-note">
+        ✅ SL = 50% of entry price — auto-calculated<br>
+        ✅ TP = your value above in premium points<br>
+        ✅ One trade at a time · 10 min breakout confirmation
+      </div>
+    </div>
+
+    <div class="sec">
+      <div class="sec-title">Controls</div>
+      <button class="btn btn-go"   id="startBtn" onclick="startAlgo()">▶  START ALGO</button>
+      <button class="btn btn-stop" id="stopBtn"  onclick="stopAlgo()" disabled>■  STOP ALGO</button>
+    </div>
+
+    <div class="sec">
+      <div class="sec-title">Performance</div>
+      <div class="sgrid">
+        <div class="sbox"><div class="sv b" id="stTotal">0</div><div class="sl">Trades</div></div>
+        <div class="sbox"><div class="sv g" id="stWR">0%</div><div class="sl">Win Rate</div></div>
+        <div class="sbox"><div class="sv g" id="stWins">0</div><div class="sl">Wins</div></div>
+        <div class="sbox"><div class="sv r" id="stLoss">0</div><div class="sl">Losses</div></div>
+      </div>
+      <div class="sbox" style="margin-top:8px">
+        <div class="sv" id="stPts" style="font-size:22px">+0.0</div>
+        <div class="sl">Total Points P&amp;L</div>
+      </div>
+    </div>
+
+  </aside>
+
+  <!-- MAIN -->
+  <main class="main">
+
+    <div class="pm">
+      <div class="pc">
+        <div class="pch">
+          <div>
+            <div class="pclbl">Strike 1 — Live Premium</div>
+            <div class="pcstrike" id="lbl1">— Enter Strike —</div>
+          </div>
+          <span class="pbadge pce" id="b1">CE</span>
+        </div>
+        <div class="plive" id="p1">—</div>
+        <div class="pmeta">
+          <div class="pm-item"><span class="pm-lbl">Level:</span><span class="pm-val" id="lv1d">—</span></div>
+          <div class="pm-item"><span class="pm-lbl">Distance:</span><span class="pm-val" id="d1">—</span></div>
+        </div>
+      </div>
+      <div class="pc s2">
+        <div class="pch">
+          <div>
+            <div class="pclbl">Strike 2 — Live Premium</div>
+            <div class="pcstrike" id="lbl2">— Enter Strike —</div>
+          </div>
+          <span class="pbadge ppe" id="b2">PE</span>
+        </div>
+        <div class="plive" id="p2">—</div>
+        <div class="pmeta">
+          <div class="pm-item"><span class="pm-lbl">Level:</span><span class="pm-val" id="lv2d">—</span></div>
+          <div class="pm-item"><span class="pm-lbl">Distance:</span><span class="pm-val" id="d2">—</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="cbar" id="cbar">
+      <span class="clbl">⏱ CONFIRMING BREAKOUT</span>
+      <div class="cpw"><div class="cp" id="cprog" style="width:0%"></div></div>
+      <span class="ct" id="ctimer">10:00</span>
+    </div>
+
+    <div class="pp" id="posPanel">
+      <div class="pph">
+        <div class="ppt">⬤ Active Position</div>
+        <div class="ppnl" id="ppnl">+0.00</div>
+      </div>
+      <div class="ppg">
+        <div><div class="ppi-lbl">Contract</div><div class="ppi-val" id="pcon">—</div></div>
+        <div><div class="ppi-lbl">Entry</div><div class="ppi-val" id="pent">—</div></div>
+        <div><div class="ppi-lbl">Current</div><div class="ppi-val" id="pcur">—</div></div>
+        <div><div class="ppi-lbl">Triggered By</div><div class="ppi-val" id="pbk" style="font-size:10px;color:var(--muted)">—</div></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin-top:10px">
+        <span>SL: <span id="psl" style="color:var(--red)">—</span></span>
+        <span style="letter-spacing:1px">PRICE RANGE</span>
+        <span>TP: <span id="ptp" style="color:var(--green)">—</span></span>
+      </div>
+      <div class="ptr">
+        <div class="ptr-sl"></div>
+        <div class="ptr-tp"></div>
+        <div class="ptr-cur" id="pcursor"></div>
+      </div>
+    </div>
+
+    <div class="bsplit">
+      <div class="hpanel">
+        <div class="phdr">
+          <div class="ptitle">Trade History</div>
+          <div style="font-size:11px;color:var(--muted);font-family:var(--mono)" id="tcnt">0 trades</div>
+        </div>
+        <div class="tw">
+          <table>
+            <thead>
+              <tr>
+                <th>#</th><th>Time</th><th>Contract</th>
+                <th>Entry</th><th>Exit</th><th>TP</th><th>SL</th>
+                <th>Points</th><th>Result</th><th>Balance</th>
+              </tr>
+            </thead>
+            <tbody id="tbl">
+              <tr><td colspan="10" class="empty">No trades yet. Configure and start the algo.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="lpanel">
+        <div class="phdr">
+          <div class="ptitle">Live Activity Log</div>
+          <button class="bsm dim" onclick="clearLog()" style="font-size:10px;padding:4px 10px">Clear</button>
+        </div>
+        <div class="llist" id="logList">
+          <div class="lentry">
+            <span class="ltime">--:--:--</span>
+            <span class="lmsg" style="color:var(--muted)">Connecting to server...</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+// ── SSE (replaces WebSocket) ──────────────────────────────────────────────
+let es, prevP = { strike1: null, strike2: null }, logSeen = new Set();
+
+function connectSSE() {
+  es = new EventSource('/api/events');
+  es.onopen    = () => setConn(true);
+  es.onerror   = () => { setConn(false); es.close(); setTimeout(connectSSE, 3000); };
+  es.onmessage = e => {
+    try {
+      const d = JSON.parse(e.data);
+      if (d.type === 'state')   onState(d);
+      if (d.type === 'history') onHistory(d);
+      if (d.type === 'log')     addLog(d.msg, d.time);
+    } catch(err) { /* heartbeat comment lines are ignored */ }
+  };
+}
+
+function setConn(on) {
+  document.getElementById('wsDot').className = 'ws-dot' + (on ? ' on' : '');
+  document.getElementById('wsLbl').textContent = on ? 'LIVE' : 'OFFLINE';
+}
+
+function onState(d) {
+  const sc  = { IDLE:'var(--muted)', MONITORING:'var(--blue)', CONFIRMING:'var(--yellow)', TRADING:'var(--green)' };
+  const dot = document.getElementById('sdot');
+  const lbl = document.getElementById('slbl');
+  dot.className = 'sdot ' + d.status.toLowerCase();
+  lbl.textContent = d.status;
+  lbl.style.color = sc[d.status] || 'var(--muted)';
+
+  if (d.balance != null) setBalDisplay(d.balance);
+
+  if (d.account && d.account.detected) {
+    const badge = document.getElementById('acctBadge');
+    badge.style.display = 'flex';
+    const name = d.account.name || 'Trader';
+    document.getElementById('acctAvatar').textContent = name.charAt(0).toUpperCase();
+    document.getElementById('acctName').textContent   = name;
+    document.getElementById('acctEmail').textContent  = d.account.email || 'Delta Exchange';
+    document.getElementById('balNote').textContent    = d.account.delta_balance
+      ? 'Synced from Delta Exchange'
+      : `Connected as ${name}`;
+  }
+
+  if (d.config && d.config.strike1) {
+    document.getElementById('lbl1').textContent = `${d.config.strike1} ${d.config.type1}`;
+    document.getElementById('lbl2').textContent = `${d.config.strike2} ${d.config.type2}`;
+    const t1 = d.config.type1, t2 = d.config.type2;
+    document.getElementById('b1').textContent = t1;
+    document.getElementById('b2').textContent = t2;
+    document.getElementById('b1').className = 'pbadge ' + (t1 === 'CE' ? 'pce' : 'ppe');
+    document.getElementById('b2').className = 'pbadge ' + (t2 === 'CE' ? 'pce' : 'ppe');
+    document.getElementById('lv1d').textContent = d.config.level1;
+    document.getElementById('lv2d').textContent = d.config.level2;
+  }
+
+  if (d.prices) {
+    ['strike1','strike2'].forEach((k, i) => {
+      const px = d.prices[k], el = document.getElementById(`p${i+1}`), pr = prevP[k];
+      if (px != null) {
+        el.textContent = px.toFixed(1);
+        el.className   = 'plive' + (pr == null ? '' : px > pr ? ' up' : px < pr ? ' dn' : '');
+        const lv = d.config ? parseFloat(d.config[`level${i+1}`]) : null;
+        if (lv) {
+          const dist = (px - lv).toFixed(1), sign = dist >= 0 ? '+' : '';
+          const de = document.getElementById(`d${i+1}`);
+          de.textContent = sign + dist;
+          de.style.color = Math.abs(parseFloat(dist)) / lv > 0.03 ? 'var(--yellow)' : 'var(--muted)';
+        }
+        prevP[k] = px;
+      }
+    });
+  }
+
+  const cbar = document.getElementById('cbar');
+  if (d.status === 'CONFIRMING') {
+    cbar.classList.add('show');
+    const total = d.confirm_total || 600;
+    document.getElementById('cprog').style.width = Math.min(100, (d.confirm_elapsed / total) * 100) + '%';
+    const r = d.confirm_remaining, m = Math.floor(r / 60), s = r % 60;
+    document.getElementById('ctimer').textContent = `${m}:${String(s).padStart(2,'0')}`;
+  } else {
+    cbar.classList.remove('show');
+  }
+
+  const pp = document.getElementById('posPanel');
+  if (d.position) {
+    pp.classList.add('show');
+    const pos = d.position, pnl = pos.pnl || 0;
+    const pe  = document.getElementById('ppnl');
+    pe.textContent = (pnl >= 0 ? '+' : '') + pnl.toFixed(2);
+    pe.style.color = pnl >= 0 ? 'var(--green)' : 'var(--red)';
+    document.getElementById('pcon').textContent = pos.label || '—';
+    document.getElementById('pent').textContent = pos.entry_price?.toFixed(1) || '—';
+    document.getElementById('pcur').textContent = pos.current_price?.toFixed(1) || '—';
+    document.getElementById('pbk').textContent  = pos.broke_label || '—';
+    document.getElementById('psl').textContent  = pos.sl?.toFixed(1) || '—';
+    document.getElementById('ptp').textContent  = pos.tp?.toFixed(1) || '—';
+    if (pos.sl && pos.tp && pos.current_price) {
+      const pct = Math.min(100, Math.max(0, ((pos.current_price - pos.sl) / (pos.tp - pos.sl)) * 100));
+      document.getElementById('pcursor').style.left = pct + '%';
+    }
+  } else {
+    pp.classList.remove('show');
+  }
+
+  if (d.stats) setStats(d.stats);
+  if (d.logs)  d.logs.forEach(l => addLog(l.msg, l.time, true));
+  document.getElementById('startBtn').disabled = d.running;
+  document.getElementById('stopBtn').disabled  = !d.running;
+}
+
+function onHistory(d) {
+  if (d.balance != null) setBalDisplay(d.balance);
+  if (d.stats) setStats(d.stats);
+  renderTable(d.trades);
+}
+
+function setBalDisplay(b) {
+  document.getElementById('balVal').textContent =
+    '₹' + Number(b).toLocaleString('en-IN', { maximumFractionDigits: 0 });
+}
+
+function setStats(s) {
+  document.getElementById('stTotal').textContent = s.total;
+  document.getElementById('stWins').textContent  = s.wins;
+  document.getElementById('stLoss').textContent  = s.losses;
+  document.getElementById('stWR').textContent    = s.win_rate + '%';
+  const pe = document.getElementById('stPts'), pts = s.total_points;
+  pe.textContent = (pts >= 0 ? '+' : '') + pts.toFixed(1);
+  pe.style.color = pts >= 0 ? 'var(--green)' : 'var(--red)';
+}
+
+function renderTable(trades) {
+  const tbody = document.getElementById('tbl');
+  document.getElementById('tcnt').textContent = trades.length + ' trades';
+  if (!trades.length) {
+    tbody.innerHTML = '<tr><td colspan="10" class="empty">No trades yet. Configure and start the algo.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = trades.map((t, i) => {
+    const pts   = t.points || 0;
+    const ps    = (pts >= 0 ? '+' : '') + pts.toFixed(1);
+    const badge = t.result === 'PROFIT'
+      ? '<span class="rbp rp">PROFIT</span>'
+      : '<span class="rbp rl2">LOSS</span>';
+    const bal = t.balance_after
+      ? '₹' + Number(t.balance_after).toLocaleString('en-IN', { maximumFractionDigits: 0 })
+      : '—';
+    const ts = t.timestamp ? t.timestamp.substring(11, 19) : '—';
+    return `<tr>
+      <td style="color:var(--muted)">${trades.length - i}</td>
+      <td style="color:var(--muted)">${ts}</td>
+      <td>${t.strike || '—'}</td>
+      <td>${t.entry_price?.toFixed(1) || '—'}</td>
+      <td>${t.exit_price?.toFixed(1)  || '—'}</td>
+      <td style="color:var(--green)">${t.tp_price?.toFixed(1) || '—'}</td>
+      <td style="color:var(--red)">${t.sl_price?.toFixed(1)   || '—'}</td>
+      <td class="${pts >= 0 ? 'pp2' : 'pn'}">${ps}</td>
+      <td>${badge}</td>
+      <td style="color:var(--blue)">${bal}</td>
+    </tr>`;
+  }).join('');
+}
+
+function addLog(msg, time, fromHistory) {
+  if (fromHistory && logSeen.has(msg)) return;
+  logSeen.add(msg);
+  const list = document.getElementById('logList');
+  const t    = time || new Date().toTimeString().slice(0, 8);
+  const div  = document.createElement('div');
+  div.className = 'lentry';
+  div.innerHTML = `<span class="ltime">${t}</span><span class="lmsg">${msg}</span>`;
+  list.prepend(div);
+  while (list.children.length > 120) list.removeChild(list.lastChild);
+}
+
+function clearLog() {
+  document.getElementById('logList').innerHTML = '';
+  logSeen.clear();
+}
+
+async function startAlgo() {
+  const s1 = document.getElementById('s1').value;
+  const t1 = document.getElementById('t1').value;
+  const l1 = document.getElementById('l1').value;
+  const s2 = document.getElementById('s2').value;
+  const t2 = document.getElementById('t2').value;
+  const l2 = document.getElementById('l2').value;
+  const tp = document.getElementById('tp_price').value;
+
+  if (!s1 || !l1 || !s2 || !l2) { alert('Please fill all Strike Price and Key Level fields.'); return; }
+  if (!tp) { alert('Please enter a Take Profit price.'); return; }
+
+  const btn = document.getElementById('startBtn');
+  btn.textContent = 'Starting...'; btn.disabled = true;
+
+  const res = await fetch('/api/start', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      strike1: s1, type1: t1, level1: parseFloat(l1),
+      strike2: s2, type2: t2, level2: parseFloat(l2),
+      tp_price: parseFloat(tp)
+    })
+  });
+  const d = await res.json();
+  if (!d.ok) {
+    alert(d.msg);
+    btn.textContent = '▶  START ALGO';
+    btn.disabled = false;
+  }
+}
+
+async function stopAlgo() {
+  await fetch('/api/stop', { method: 'POST' });
+}
+
+async function setBalance() {
+  const val = document.getElementById('balInput').value;
+  if (!val) return;
+  const res = await fetch('/api/balance', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ balance: parseFloat(val) })
+  });
+  const d = await res.json();
+  if (d.balance) setBalDisplay(d.balance);
+  document.getElementById('balInput').value = '';
+  document.getElementById('balNote').textContent = 'Manually overridden';
+}
+
+// Init
+connectSSE();
+fetch('/api/history').then(r => r.json()).then(d => {
+  renderTable(d.trades);
+  if (d.balance) setBalDisplay(d.balance);
+  if (d.stats)   setStats(d.stats);
+  if (d.account && d.account.detected) {
+    const badge = document.getElementById('acctBadge');
+    badge.style.display = 'flex';
+    const name = d.account.name || 'Trader';
+    document.getElementById('acctAvatar').textContent = name.charAt(0).toUpperCase();
+    document.getElementById('acctName').textContent   = name;
+    document.getElementById('acctEmail').textContent  = d.account.email || 'Delta Exchange';
+  }
+});
+</script>
+</body>
+</html>
